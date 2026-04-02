@@ -1,23 +1,20 @@
 # CloudflareSub
 
-基于 Cloudflare Workers + Workers KV 的订阅生成器：
+基于 Cloudflare Workers + Workers KV 的订阅生成器，支持：
 - 输入原始节点（`vmess://` / `vless://` / `trojan://`）
 - 批量替换为优选 IP / 域名
 - 生成可分享的短链订阅（Raw / Clash / Surge）
-- 内置 Web 页面，支持一键复制与二维码展示
+- Web 页面一键复制与二维码展示
 
 ## 功能特性
 
-- 支持 `vmess`、`vless`、`trojan` 三种节点解析
-- 支持输入 Base64 订阅文本并自动展开
-- 批量替换节点出口地址（支持 `host:port#备注`）
-- 结果落盘到 Workers KV，生成短链（`/sub/:id`）
-- 相同输入内容自动去重（7 天 TTL）
-- 支持访问令牌保护（`SUB_ACCESS_TOKEN`）
-- 支持导出：
-  - Raw（Base64）
-  - Clash（YAML）
-  - Surge（配置文本）
+- 支持 `vmess`、`vless`、`trojan` 节点解析
+- 支持 Base64 订阅文本自动展开
+- 支持 `host[:port][#remark]` 格式的优选地址
+- 结果写入 Workers KV，生成 `/sub/:id` 短链
+- 相同输入自动去重（7 天 TTL）
+- 支持 `SUB_ACCESS_TOKEN` 访问令牌保护
+- 支持导出：Raw（Base64）/ Clash（YAML）/ Surge（文本）
 
 ## 项目结构
 
@@ -26,8 +23,8 @@ cloudflaresub/
 ├─ src/
 │  ├─ worker.js      # Worker 入口（API + 订阅输出）
 │  └─ core.js        # 解析/渲染核心函数（测试使用）
-├─ public/           # 前端页面静态资源
-├─ tests/smoke.mjs   # 基础 smoke test
+├─ public/           # 前端静态资源
+├─ tests/smoke.mjs   # Smoke test
 ├─ wrangler.toml
 └─ package.json
 ```
@@ -35,52 +32,79 @@ cloudflaresub/
 ## 环境要求
 
 - Node.js 18+
+- npm 9+
+- Cloudflare 账号
 - Wrangler 4+
-- 一个 Cloudflare Workers KV Namespace
 
-## 快速开始
+## 快速开始（Cloudflare 网页端）
 
-### 1) 安装依赖
+下面按 Cloudflare Dashboard 流程操作，尽量不依赖命令行。
 
-```bash
-npm install
-```
+### 1) 准备代码
 
-### 2) 创建 KV Namespace
+- 把本项目代码放到本地（你现在已经有）
+- 确认 `wrangler.toml` 中 `name`、`main`、`assets` 路径与项目一致
 
-```bash
-npx wrangler kv namespace create SUB_STORE
-```
+### 2) 在 Dashboard 创建 Worker
 
-记下输出中的 `id`，填入 `wrangler.toml`：
+- 打开 Cloudflare Dashboard
+- 进入 `Workers & Pages`
+- 点击 `Create application` -> `Create Worker`
+- 先创建一个 Worker（用于初始化项目）
 
-```toml
-[[kv_namespaces]]
-binding = "SUB_STORE"
-id = "<your-kv-namespace-id>"
-```
+### 3) 绑定到 GitHub 仓库（推荐）
 
-### 3) 配置访问令牌（建议）
+- 在 `Workers & Pages` 点击 `Create` -> `Import a repository`
+- 授权 GitHub，并选择仓库 `InfiCheesy/cloudflaresub`
+- 构建设置建议：
+  - Framework preset: `None`
+  - Build command: 留空
+  - Build output directory: 留空
+- 保存并开始部署
 
-```bash
-npx wrangler secret put SUB_ACCESS_TOKEN
-```
+说明：这个项目是 Worker 项目，入口在 `src/worker.js`，静态资源在 `public/`。
+
+### 4) 创建 KV Namespace
+
+- 进入 `Storage & Databases` -> `KV`
+- 点击 `Create namespace`
+- 名称建议：`SUB_STORE`
+
+### 5) 给 Worker 绑定 KV
+
+- 回到 Worker 项目页面
+- 进入 `Settings` -> `Bindings`
+- 点击 `Add binding`，类型选择 `KV namespace`
+- Variable name 填：`SUB_STORE`
+- Namespace 选择上一步创建的 KV
+- 保存并重新部署
+
+### 6) 配置访问令牌 Secret
+
+- 在 Worker 项目中进入 `Settings` -> `Variables`
+- 在 `Secrets` 区域添加：
+  - Key: `SUB_ACCESS_TOKEN`
+  - Value: 你自定义的一串令牌
+- 保存后重新部署
 
 说明：
-- 已设置时，请求 `/sub/:id` 必须携带 `?token=...`
-- 未设置时，订阅链接不做二次鉴权（前端会给 warning）
+- 设置后，请求 `/sub/:id` 必须带 `?token=...`
+- 不设置也可运行，但订阅链接没有二次访问保护
 
-### 4) 本地开发
+### 7) 验证线上服务
 
-```bash
-npm run dev
-```
+- 打开 Worker 域名（如 `https://<name>.<subdomain>.workers.dev`）
+- 访问首页 `/`，应看到前端表单
+- 在页面输入节点和优选地址，点击生成
+- 拿到 `/sub/:id` 后测试：
+  - `?target=raw&token=...`
+  - `?target=clash&token=...`
+  - `?target=surge&token=...`
 
-### 5) 部署
+### 8) 后续更新代码
 
-```bash
-npm run deploy
-```
+- 如果你使用 GitHub 自动部署：直接 push 到对应分支，Cloudflare 会自动重新部署
+- 如果你不用 GitHub 自动部署：可在 Dashboard 在线编辑器中修改后手动部署
 
 ## API 说明
 
@@ -135,7 +159,7 @@ curl "https://<worker>/sub/<id>?target=clash&token=<SUB_ACCESS_TOKEN>"
 
 ## 前端页面
 
-默认根路径 `/` 提供网页表单（由 `public/` 静态资源提供）：
+根路径 `/` 提供网页表单（来自 `public/`）：
 - 粘贴节点链接
 - 粘贴优选 IP / 域名
 - 生成并展示各客户端订阅链接
@@ -147,15 +171,15 @@ curl "https://<worker>/sub/<id>?target=clash&token=<SUB_ACCESS_TOKEN>"
 npm run check
 ```
 
-当前为 smoke test，覆盖：
+当前 smoke test 覆盖：
 - 节点解析
 - 节点扩展
 - 各格式渲染
-- 加解密能力（`core.js`）
+- `core.js` 加解密能力
 
 ## 注意事项
 
-- `src/worker.js` 当前使用 KV 短链方案，不依赖 `SUB_LINK_SECRET`
+- `src/worker.js` 当前是 KV 短链方案，不依赖 `SUB_LINK_SECRET`
 - 每条订阅记录默认保存 7 天（TTL）
 - Surge 导出当前仅包含 `vmess` / `trojan`
 
